@@ -24,20 +24,28 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	//   x, y, theta and their uncertainties from GPS) and all weights to 1. 
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
+
+	num_particles = 100;
+
 	default_random_engine gen;
 	normal_distribution<double> dist_x(x, std[0]);
 	normal_distribution<double> dist_y(y, std[1]);
 	normal_distribution<double> dist_theta(theta, std[2]);
-	num_particles = 1000;
+	weights.reserve(num_particles);
+	particles.reserve(num_particles);
+
 	for (int i = 0; i < num_particles; i++) {
-		Particle p = particles[0];
+		Particle p;
 		p.id = i;
 		p.x = dist_x(gen);
 		p.y = dist_y(gen);
 		p.theta = dist_theta(gen);
 		p.weight = 1.0;
 		weights[i] = 1.0;
+		particles.push_back(p);
 	}
+
+	is_initialized = true;
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
@@ -46,6 +54,25 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
 
+	default_random_engine gen;
+
+	for (int i = 0; i < num_particles; i++) {
+		Particle p = particles[i];
+		normal_distribution<double> dist_x(p.x, std_pos[0]);
+		normal_distribution<double> dist_y(p.y, std_pos[1]);
+		normal_distribution<double> dist_theta(p.theta, std_pos[2]);
+		if (fabs(yaw_rate) > 0.001) {
+			p.x += ((velocity / yaw_rate) * (sin(p.theta + delta_t * yaw_rate) - sin(p.theta)));
+			p.y += ((velocity / yaw_rate) * (cos(p.theta) - cos(p.theta + delta_t * yaw_rate)));
+			p.theta += (yaw_rate * delta_t) + dist_theta(gen);
+		} else {
+			p.x += (velocity * delta_t * cos(p.theta));
+			p.y += (velocity * delta_t * sin(p.theta));
+		}
+		p.x += dist_x(gen);
+		p.y += dist_y(gen);
+		particles[i] = p;
+	}
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
