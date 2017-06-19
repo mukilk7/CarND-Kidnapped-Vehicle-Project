@@ -56,13 +56,13 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
 
 	default_random_engine gen;
+	normal_distribution<double> dist_x(0, std_pos[0]);
+	normal_distribution<double> dist_y(0, std_pos[1]);
+	normal_distribution<double> dist_theta(0, std_pos[2]);
 
 	for (int i = 0; i < num_particles; i++) {
 		Particle p = particles[i];
-		normal_distribution<double> dist_x(p.x, std_pos[0]);
-		normal_distribution<double> dist_y(p.y, std_pos[1]);
-		normal_distribution<double> dist_theta(p.theta, std_pos[2]);
-		if (fabs(yaw_rate) > 0.001) {
+		if (fabs(yaw_rate) > 0.0001) {
 			p.x += ((velocity / yaw_rate) * (sin(p.theta + delta_t * yaw_rate) - sin(p.theta)));
 			p.y += ((velocity / yaw_rate) * (cos(p.theta) - cos(p.theta + delta_t * yaw_rate)));
 			p.theta += (yaw_rate * delta_t) + dist_theta(gen);
@@ -89,6 +89,7 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 			double edist = dist(tobs.x, tobs.y, pobs.x, pobs.y);
 			if (mindist < 0 || edist <= mindist) {
 				tobs.id = pobs.id;
+				mindist = edist;
 			}
 		}
 		observations[i] = tobs;
@@ -124,7 +125,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			LandmarkObs tobs;
 			tobs.x = p.x + obs.x * cos(p.theta) - obs.y * sin(p.theta);
 			tobs.y = p.y + obs.x * sin(p.theta) + obs.y * cos(p.theta);
-			tobs.id = -1;
+			tobs.id = obs.id;
 			translated_observations.push_back(tobs);
 		}
 		//Get the set of landmarks within sensor range
@@ -139,16 +140,18 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		}
 		//Do observation association with map landmarks
 		dataAssociation(landmarks_in_range, translated_observations);
-		//TODO: Update particle weight using multivariate gaussian dist
+		//Update particle weight using multivariate gaussian dist
+		double twt = 1.0;
 		for (int j = 0; j < translated_observations.size(); j++) {
 			LandmarkObs tobs = translated_observations[j];
 			Map::single_landmark_s pobs = id2landmark[tobs.id];
 			double wt = exp(-(pow((tobs.x - pobs.x_f), 2)/pow((2 * std_landmark[0]),2) +
 					pow((tobs.y - pobs.y_f), 2)/pow((2 * std_landmark[1]),2)));
-			wt /= (2 * M_PI * std_landmark[0] * std_landmark[1]);
-			p.weight = wt;
-			weights[i] = wt;
+			wt /= (2.0 * M_PI * std_landmark[0] * std_landmark[1]);
+			twt *= wt;
 		}
+		p.weight = twt;
+		weights[i] = twt;
 		particles[i] = p;
 	}
 }
@@ -157,6 +160,7 @@ void ParticleFilter::resample() {
 	// TODO: Resample particles with replacement with probability proportional to their weight. 
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
+	std::cout << "Resampling particles..." << std::endl;
 	discrete_distribution<int> dp(weights.begin(), weights.end());
 	default_random_engine gen;
 	vector<Particle> resampled(num_particles);
