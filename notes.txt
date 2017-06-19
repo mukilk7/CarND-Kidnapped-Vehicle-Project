@@ -1,0 +1,31 @@
+Particle Filter Pipeline
+
+1. Initialization
+   - Pick number of particles for the overall monte carlo method
+   - Create each particle and set its x, y, theta (heading) to values normally
+     distributed around initial position estimate from GPS
+   - Also initialize each particle's initial weight to 1
+
+2. Prediction
+   - For each particle, estimate its new position and heading (x, y, theta) based
+     on CONTROL inputs (velocity, yaw_rate - i.e, gas, steering) using derived equations.
+
+3. Update
+   - For each particle, update its position based on observed landmark measurements (using LIDAR and RADAR data)
+     - Assume that the LIDAR point cloud has been clustered into actual landmark positions in car coordinates
+     - We will get a lot of such clustered points and we need to figure out which ones correspond to actual map landmarks
+       - We do this by first translating the observed landmarks into map coordinates
+       	 - https://discussions.udacity.com/t/coordinate-transform/241288/27
+	 - Use a rotation matrix to derive the offset and then add the offset to the measured position to get the map coordinates position
+       - Then we pick the observed points closest (in euclidian distance) to each map landmark to represent the measured landmark position
+     *** NOTE: Instead of the using the observed landmark measurements to update or compute the "vehicle's" x,y,theta,
+       we update the weight of each particle instead using the multivariate gaussian equation that uses multivariate gaussian probability
+       density function (pdf). This weight update function uses the predicted and observed landmark positions (specified in just x and y -
+       note theta (heading) isn't needed in the update step, it is only used during prediction)
+       	    - https://discussions.udacity.com/t/calculating-the-particles-final-weight/247704
+
+4. Resample particles using the resampling wheel
+   - https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/2c318113-724b-4f9f-860c-cb334e6e4ad7/lessons/48704330/concepts/487590050923
+   - We're recomputing/repopulating the ParticleFilter::particles with a new set of particles
+
+       

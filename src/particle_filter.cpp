@@ -95,6 +95,31 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
+
+	for (int i = 0; i < num_particles; i++) {
+		Particle p = particles[p];
+		//Compute Observations Translated to Map Coordinates
+		vector<LandmarkObs> translated_observations;
+		for (int j = 0; j < observations.size(); j++) {
+			LandmarkObs obs = observations[j];
+			LandmarkObs tobs;
+			tobs.x = p.x + obs.x * cos(p.theta) - obs.y * sin(p.theta);
+			tobs.y = p.y + obs.x * sin(p.theta) + obs.y * cos(p.theta);
+			tobs.id = -1;
+			translated_observations.push_back(tobs);
+		}
+		//Get the set of landmarks within sensor range
+		vector<LandmarkObs> landmarks_in_range;
+		for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
+			Map::single_landmark_s l = map_landmarks.landmark_list[j];
+			if (fabs(l.x_f - p.x) <= sensor_range && fabs(l.y_f - p.y) <= sensor_range) {
+				landmarks_in_range.push_back(l);
+			}
+		}
+		//Do observation association with map landmarks
+		dataAssociation(landmarks_in_range, translated_observations);
+		//TODO: Update particle weight using multivariate gaussian dist
+	}
 }
 
 void ParticleFilter::resample() {
