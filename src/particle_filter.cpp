@@ -14,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <iterator>
+#include <map>
 
 #include "particle_filter.h"
 
@@ -80,7 +81,18 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   observed measurement to this particular landmark.
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
-
+	for (int i = 0; i < observations.size(); i++) {
+		LandmarkObs tobs = observations[i];
+		double mindist = - 1;
+		for (int j = 0; j < predicted.size(); j++) {
+			LandmarkObs pobs = predicted[j];
+			double edist = dist(tobs.x, tobs.y, pobs.x, pobs.y);
+			if (mindist < 0 || edist <= mindist) {
+				tobs.id = pobs.id;
+			}
+		}
+		observations[i] = tobs;
+	}
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
@@ -96,8 +108,15 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
 
+	//Store id to landmark for performance
+	map<int, Map::single_landmark_s> id2landmark;
+	for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
+		Map::single_landmark_s l = map_landmarks.landmark_list[j];
+		id2landmark[l.id_i] = l;
+	}
+
 	for (int i = 0; i < num_particles; i++) {
-		Particle p = particles[p];
+		Particle p = particles[i];
 		//Compute Observations Translated to Map Coordinates
 		vector<LandmarkObs> translated_observations;
 		for (int j = 0; j < observations.size(); j++) {
@@ -113,12 +132,24 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
 			Map::single_landmark_s l = map_landmarks.landmark_list[j];
 			if (fabs(l.x_f - p.x) <= sensor_range && fabs(l.y_f - p.y) <= sensor_range) {
-				landmarks_in_range.push_back(l);
+				LandmarkObs pobs;
+				pobs.x = l.x_f; pobs.y = l.y_f; pobs.id = l.id_i;
+				landmarks_in_range.push_back(pobs);
 			}
 		}
 		//Do observation association with map landmarks
 		dataAssociation(landmarks_in_range, translated_observations);
 		//TODO: Update particle weight using multivariate gaussian dist
+		for (int j = 0; j < translated_observations.size(); j++) {
+			LandmarkObs tobs = translated_observations[j];
+			Map::single_landmark_s pobs = id2landmark[tobs.id];
+			double wt = exp(-(pow((tobs.x - pobs.x_f), 2)/pow((2 * std_landmark[0]),2) +
+					pow((tobs.y - pobs.y_f), 2)/pow((2 * std_landmark[1]),2)));
+			wt /= (2 * M_PI * std_landmark[0] * std_landmark[1]);
+			p.weight = wt;
+			weights[i] = wt;
+		}
+		particles[i] = p;
 	}
 }
 
