@@ -15,10 +15,13 @@
 #include <string>
 #include <iterator>
 #include <map>
+#include <cstdio>
 
 #include "particle_filter.h"
 
 using namespace std;
+
+//#define DEBUGGING 1
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// TODO: Set the number of particles. Initialize all particles to first position (based on estimates of 
@@ -65,14 +68,18 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 		if (fabs(yaw_rate) > 0.0001) {
 			p.x += ((velocity / yaw_rate) * (sin(p.theta + delta_t * yaw_rate) - sin(p.theta)));
 			p.y += ((velocity / yaw_rate) * (cos(p.theta) - cos(p.theta + delta_t * yaw_rate)));
-			p.theta += (yaw_rate * delta_t) + dist_theta(gen);
+			p.theta += (yaw_rate * delta_t);
 		} else {
 			p.x += (velocity * delta_t * cos(p.theta));
 			p.y += (velocity * delta_t * sin(p.theta));
 		}
 		p.x += dist_x(gen);
 		p.y += dist_y(gen);
+		p.theta += dist_theta(gen);
 		particles[i] = p;
+#ifdef DEBUGGING
+		printf("Predicted Particle %d = (%f, %f, %f)\n", i, p.x, p.y, p.theta);
+#endif
 	}
 }
 
@@ -83,11 +90,11 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   implement this method and use it as a helper during the updateWeights phase.
 	for (int i = 0; i < observations.size(); i++) {
 		LandmarkObs tobs = observations[i];
-		double mindist = - 1;
+		double mindist = -1;
 		for (int j = 0; j < predicted.size(); j++) {
 			LandmarkObs pobs = predicted[j];
 			double edist = dist(tobs.x, tobs.y, pobs.x, pobs.y);
-			if (mindist < 0 || edist <= mindist) {
+			if (mindist < 0 || edist < mindist) {
 				tobs.id = pobs.id;
 				mindist = edist;
 			}
@@ -116,8 +123,13 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		id2landmark[l.id_i] = l;
 	}
 
+	double sumwts = 0.0;
+
 	for (int i = 0; i < num_particles; i++) {
 		Particle p = particles[i];
+#ifdef DEBUGGING
+		printf("*************** Particle %d ***********************\n", i);
+#endif
 		//Compute Observations Translated to Map Coordinates
 		vector<LandmarkObs> translated_observations;
 		for (int j = 0; j < observations.size(); j++) {
@@ -142,31 +154,55 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		dataAssociation(landmarks_in_range, translated_observations);
 		//Update particle weight using multivariate gaussian dist
 		double twt = 1.0;
+		double c = 2 * M_PI * std_landmark[0] * std_landmark[1];
 		for (int j = 0; j < translated_observations.size(); j++) {
 			LandmarkObs tobs = translated_observations[j];
 			Map::single_landmark_s pobs = id2landmark[tobs.id];
-			double wt = exp(-(pow((tobs.x - pobs.x_f), 2)/pow((2 * std_landmark[0]),2) +
-					pow((tobs.y - pobs.y_f), 2)/pow((2 * std_landmark[1]),2)));
-			wt /= (2.0 * M_PI * std_landmark[0] * std_landmark[1]);
+			/*
+			printf("UW Observation %d -> %d, (%0.2f, %0.2f), (%0.2f, %0.2f)\n", j, tobs.id,
+					tobs.x, tobs.y, pobs.x_f, pobs.y_f);
+			*/
+			double xdiff = (tobs.x - pobs.x_f);
+			double ydiff = (tobs.y - pobs.y_f);
+			double xfac = (xdiff * xdiff) / (2 * std_landmark[0] * std_landmark[0]);
+			double yfac = (ydiff * ydiff) / (2 * std_landmark[1] * std_landmark[1]);
+			double wt = exp(-(xfac + yfac));
+			wt = wt / c;
+			//printf("	xfac = %f, yfac = %f, c = %f, wt = %f, twt = %lf\n", xfac, yfac, c, wt, twt);
 			twt *= wt;
 		}
 		p.weight = twt;
-		weights[i] = twt;
+		weights[i] = twt * 100000;
 		particles[i] = p;
+		sumwts += twt;
+#ifdef DEBUGGING
+		printf("Total Particle %d Weight = %lf\n", i, twt);
+#endif
 	}
 }
 
 void ParticleFilter::resample() {
-	// TODO: Resample particles with replacement with probability proportional to their weight. 
-	// NOTE: You may find std::discrete_distribution helpful here.
-	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
+#ifdef DEBUGGING
 	std::cout << "Resampling particles..." << std::endl;
-	discrete_distribution<int> dp(weights.begin(), weights.end());
+#endif
+	vector<Particle> resampled;
 	default_random_engine gen;
-	vector<Particle> resampled(num_particles);
+	double maxw = *max_element(weights.begin(), weights.end());
+	uniform_real_distribution<double> urd(0.0, maxw);
+	uniform_int_distribution<int> uid(0, num_particles - 1);
+	int index = uid(gen);
+	double beta = 0;
 	for (int i = 0; i < num_particles; i++) {
-		Particle p = particles[dp(gen)];
+		beta += (urd(gen) * 2.0);
+		while(weights[index] < beta) {
+			beta -= weights[index];
+			index = (index + 1) % num_particles;
+		}
+		Particle p = particles[index];
 		resampled.push_back(p);
+#ifdef DEBUGGING
+		printf("	Position %d = Particle %d\n", i, p.id);
+#endif
 	}
 	particles = resampled;
 }
